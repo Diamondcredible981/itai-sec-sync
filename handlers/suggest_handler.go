@@ -40,6 +40,7 @@ type SuggestExplanation struct {
 
 type SuggestResponse struct {
 	Success          bool        `json:"success"`
+	Strategy         string      `json:"strategy"`
 	Message          string      `json:"message,omitempty"`
 	TotalOperations  int         `json:"total_operations"`
 	Operations       []Operation `json:"operations"`
@@ -50,6 +51,12 @@ type SuggestResponse struct {
 }
 
 func (s *Service) GetProductSuggestions(c *gin.Context) {
+	strategy := c.DefaultQuery("strategy", "min-change")
+	if strategy != "min-change" && strategy != "min-size" {
+		s.badRequest(c, "strategy 参数仅支持 min-change 或 min-size")
+		return
+	}
+
 	// 1. 获取拓扑ID
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -100,6 +107,7 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 	if !checkCoverage(allProductIDs, allFunctionIDsSet, allProductsMap) {
 		c.JSON(http.StatusOK, SuggestResponse{
 			Success: false,
+			Strategy: strategy,
 			Message: "无法覆盖所有功能，产品库不包含所有必需功能。",
 			Error:   "无法覆盖",
 		})
@@ -107,59 +115,18 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 	}
 
 	// 核心逻辑重构：
-	// 1. 找到能覆盖所有功能的最小设备集尺寸k
-	// 2. 在所有尺寸为k的设备集中，找到与当前设备集操作距离最近的一个
-	// 3. 生成该操作的建议
-
-	// 步骤1: 找到最小设备集尺寸k
-	minProductSetSize := -1
-	for k := 1; k <= len(allProductIDs); k++ {
-		combinations := getCombinations(allProductIDs, k)
-		for _, combo := range combinations {
-			if checkCoverage(combo, allFunctionIDsSet, allProductsMap) {
-				minProductSetSize = k
-				break
-			}
-		}
-		if minProductSetSize != -1 {
-			break
-		}
-	}
-
-	// 步骤2: 寻找最优目标集
-	var bestTargetSet []int
-	minOperations := -1
-
-	optimalSizeCombinations := getCombinations(allProductIDs, minProductSetSize)
-
-	for _, targetSetSlice := range optimalSizeCombinations {
-		if !checkCoverage(targetSetSlice, allFunctionIDsSet, allProductsMap) {
-			continue
-		}
-
-		targetSetMap := make(map[int]bool)
-		for _, pID := range targetSetSlice {
-			targetSetMap[pID] = true
-		}
-
-		// 计算操作数
-		adds, removes := 0, 0
-		for pID := range targetSetMap {
-			if !currentProductIDsSet[pID] {
-				adds++
-			}
-		}
-		for pID := range currentProductIDsSet {
-			if !targetSetMap[pID] {
-				removes++
-			}
-		}
-		totalOps := adds + removes
-
-		if minOperations == -1 || totalOps < minOperations {
-			minOperations = totalOps
-			bestTargetSet = targetSetSlice
-		}
+	// 1) 以“修改次数最少”为第一目标
+	// 2) 在同修改次数下，以“冗余最少”为第二目标
+	// 3) 再以“组件总数更少”为第三目标
+	bestTargetSet, minOperations, ok := findOptimalTargetSetByStrategy(strategy, allProducts, allFunctions, allProductIDs, allProductsMap, currentProductIDs, currentProductIDsSet, allFunctionIDsSet)
+	if !ok {
+		c.JSON(http.StatusOK, SuggestResponse{
+			Success: false,
+			Strategy: strategy,
+			Message: "无法生成满足覆盖要求的优化方案。",
+			Error:   "优化失败",
+		})
+		return
 	}
 
 	// 步骤3: 生成结果
@@ -176,6 +143,7 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 
 		c.JSON(http.StatusOK, SuggestResponse{
 			Success:         true,
+			Strategy:        strategy,
 			Message:         "当前配置已覆盖所有功能点，且无冗余，无需调整。",
 			TotalOperations: 0,
 			Explanation:     explanation,
@@ -228,6 +196,7 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, SuggestResponse{
 		Success:          true,
+		Strategy:         strategy,
 		Message:          "产品建议生成成功",
 		TotalOperations:  minOperations,
 		Operations:       append(addOps, removeOps...),
@@ -235,6 +204,281 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 		RemoveOperations: removeOps,
 		Explanation:      explanation,
 	})
+}
+
+func findOptimalTargetSetByStrategy(
+	strategy string,
+	allProducts []models.Product,
+	allFunctions []models.Function,
+	allProductIDs []int,
+	allProductsMap map[int]models.Product,
+	currentProductIDs []int,
+	currentProductIDsSet map[int]bool,
+	allFunctionIDsSet map[int]bool,
+) ([]int, int, bool) {
+	if strategy == "min-size" {
+		return findOptimalTargetSetMinSize(allProductIDs, allProductsMap, allFunctions, allFunctionIDsSet, currentProductIDsSet)
+	}
+	return findOptimalTargetSet(allProducts, allFunctions, currentProductIDs)
+}
+
+func findOptimalTargetSetMinSize(
+	allProductIDs []int,
+	allProductsMap map[int]models.Product,
+	allFunctions []models.Function,
+	allFunctionIDsSet map[int]bool,
+	currentProductIDsSet map[int]bool,
+) ([]int, int, bool) {
+	for k := 1; k <= len(allProductIDs); k++ {
+		combinations := getCombinations(allProductIDs, k)
+		bestFound := false
+		bestOps := -1
+		bestRedundant := -1
+		bestAdd := -1
+		var bestTarget []int
+
+		for _, combo := range combinations {
+			if !checkCoverage(combo, allFunctionIDsSet, allProductsMap) {
+				continue
+			}
+
+			targetMetrics, _, _ := buildSuggestMetrics(combo, allFunctions, allProductsMap)
+			totalOps, addOps := calcOps(combo, currentProductIDsSet)
+
+			if !bestFound ||
+				totalOps < bestOps ||
+				(totalOps == bestOps && targetMetrics.RedundantCount < bestRedundant) ||
+				(totalOps == bestOps && targetMetrics.RedundantCount == bestRedundant && addOps < bestAdd) {
+				bestFound = true
+				bestOps = totalOps
+				bestRedundant = targetMetrics.RedundantCount
+				bestAdd = addOps
+				bestTarget = combo
+			}
+		}
+
+		if bestFound {
+			return bestTarget, bestOps, true
+		}
+	}
+
+	return nil, -1, false
+}
+
+func calcOps(target []int, currentProductIDsSet map[int]bool) (int, int) {
+	targetSet := make(map[int]bool, len(target))
+	for _, id := range target {
+		targetSet[id] = true
+	}
+
+	addOps := 0
+	removeOps := 0
+	for id := range targetSet {
+		if !currentProductIDsSet[id] {
+			addOps++
+		}
+	}
+	for id := range currentProductIDsSet {
+		if !targetSet[id] {
+			removeOps++
+		}
+	}
+
+	return addOps + removeOps, addOps
+}
+
+type suggestSearchState struct {
+	Found       bool
+	Redundant   int
+	Size        int
+	AddCount    int
+	SelectedIDs []int
+}
+
+func findOptimalTargetSet(allProducts []models.Product, allFunctions []models.Function, currentProductIDs []int) ([]int, int, bool) {
+	funcCount := len(allFunctions)
+	if funcCount == 0 {
+		return []int{}, 0, true
+	}
+
+	funcIndex := make(map[uint]int, funcCount)
+	for i, f := range allFunctions {
+		funcIndex[f.ID] = i
+	}
+
+	productIDs := make([]int, 0, len(allProducts))
+	productFuncs := make([][]int, 0, len(allProducts))
+	for _, p := range allProducts {
+		productIDs = append(productIDs, int(p.ID))
+		fIdxs := make([]int, 0)
+		for _, fID := range utils.StringToIntSlice(p.FunctionIDsStr) {
+			if idx, ok := funcIndex[uint(fID)]; ok {
+				fIdxs = append(fIdxs, idx)
+			}
+		}
+		productFuncs = append(productFuncs, fIdxs)
+	}
+
+	n := len(productIDs)
+	if n == 0 {
+		return nil, -1, false
+	}
+
+	currentSet := make(map[int]bool, len(currentProductIDs))
+	for _, id := range currentProductIDs {
+		currentSet[id] = true
+	}
+	isCurrent := make([]bool, n)
+	for i, id := range productIDs {
+		isCurrent[i] = currentSet[id]
+	}
+
+	wordCount := (funcCount + 63) / 64
+	suffixUnion := make([][]uint64, n+1)
+	suffixUnion[n] = make([]uint64, wordCount)
+	for i := n - 1; i >= 0; i-- {
+		words := make([]uint64, wordCount)
+		copy(words, suffixUnion[i+1])
+		for _, fIdx := range productFuncs[i] {
+			w := fIdx / 64
+			b := uint(fIdx % 64)
+			words[w] |= uint64(1) << b
+		}
+		suffixUnion[i] = words
+	}
+
+	allMask := make([]uint64, wordCount)
+	for i := 0; i < funcCount; i++ {
+		w := i / 64
+		b := uint(i % 64)
+		allMask[w] |= uint64(1) << b
+	}
+
+	counts := make([]int, funcCount)
+	coveredBits := make([]uint64, wordCount)
+	selected := make([]bool, n)
+	coveredCount := 0
+	redundantCount := 0
+	selectedSize := 0
+	addCount := 0
+	removeCount := 0
+
+	var runSearch = func(opsLimit int) suggestSearchState {
+		best := suggestSearchState{Found: false}
+
+		var dfs func(idx int)
+		dfs = func(idx int) {
+			if addCount+removeCount > opsLimit {
+				return
+			}
+
+			if !canStillCoverAll(coveredBits, suffixUnion[idx], allMask) {
+				return
+			}
+
+			if idx == n {
+				if coveredCount != funcCount {
+					return
+				}
+
+				if !best.Found ||
+					redundantCount < best.Redundant ||
+					(redundantCount == best.Redundant && selectedSize < best.Size) ||
+					(redundantCount == best.Redundant && selectedSize == best.Size && addCount < best.AddCount) {
+					best.Found = true
+					best.Redundant = redundantCount
+					best.Size = selectedSize
+					best.AddCount = addCount
+					ids := make([]int, 0, selectedSize)
+					for i, keep := range selected {
+						if keep {
+							ids = append(ids, productIDs[i])
+						}
+					}
+					best.SelectedIDs = ids
+				}
+				return
+			}
+
+			tryStates := []bool{isCurrent[idx], !isCurrent[idx]}
+			for _, include := range tryStates {
+				selected[idx] = include
+
+				deltaAdd, deltaRemove := 0, 0
+				if include && !isCurrent[idx] {
+					deltaAdd = 1
+				}
+				if !include && isCurrent[idx] {
+					deltaRemove = 1
+				}
+				addCount += deltaAdd
+				removeCount += deltaRemove
+
+				deltaCovered := 0
+				deltaRedundant := 0
+				if include {
+					selectedSize++
+					for _, fIdx := range productFuncs[idx] {
+						prev := counts[fIdx]
+						counts[fIdx] = prev + 1
+						if prev == 0 {
+							deltaCovered++
+							w := fIdx / 64
+							b := uint(fIdx % 64)
+							coveredBits[w] |= uint64(1) << b
+						}
+						if prev == 1 {
+							deltaRedundant++
+						}
+					}
+					coveredCount += deltaCovered
+					redundantCount += deltaRedundant
+				}
+
+				dfs(idx + 1)
+
+				if include {
+					selectedSize--
+					for _, fIdx := range productFuncs[idx] {
+						prev := counts[fIdx]
+						counts[fIdx] = prev - 1
+						if prev == 1 {
+							w := fIdx / 64
+							b := uint(fIdx % 64)
+							coveredBits[w] &^= uint64(1) << b
+						}
+					}
+					coveredCount -= deltaCovered
+					redundantCount -= deltaRedundant
+				}
+
+				addCount -= deltaAdd
+				removeCount -= deltaRemove
+				selected[idx] = false
+			}
+		}
+
+		dfs(0)
+		return best
+	}
+
+	for ops := 0; ops <= n; ops++ {
+		best := runSearch(ops)
+		if best.Found {
+			return best.SelectedIDs, ops, true
+		}
+	}
+
+	return nil, -1, false
+}
+
+func canStillCoverAll(coveredBits []uint64, suffixBits []uint64, allMask []uint64) bool {
+	for i := range allMask {
+		if (coveredBits[i]|suffixBits[i])&allMask[i] != allMask[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func buildSuggestMetrics(productIDs []int, allFunctions []models.Function, allProductsMap map[int]models.Product) (SuggestMetrics, map[uint]int, map[int]bool) {
