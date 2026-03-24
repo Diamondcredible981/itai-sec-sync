@@ -34,10 +34,19 @@ type AttackPathResponse struct {
 	PathLength   int              `json:"path_length"`
 	OverallRisk  int              `json:"overall_risk"`
 	RiskLevel    string           `json:"risk_level"`
+	Summary      AttackPathSummary `json:"summary"`
 	Nodes        []AttackPathNode `json:"nodes"`
 	Edges        []AttackPathEdge `json:"edges"`
 	KeyJumps     []AttackPathEdge `json:"key_jumps"`
 	Mitigations  []string         `json:"mitigations"`
+}
+
+type AttackPathSummary struct {
+	AvgJumpRisk        float64 `json:"avg_jump_risk"`
+	MaxJumpRisk        int     `json:"max_jump_risk"`
+	HighRiskJumpCount  int     `json:"high_risk_jump_count"`
+	WeakestNodeID      int     `json:"weakest_node_id"`
+	WeakestNodeName    string  `json:"weakest_node_name"`
 }
 
 func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
@@ -127,6 +136,7 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 			PathLength:       len(orderedProducts),
 			OverallRisk:      0,
 			RiskLevel:        "low",
+			Summary:          AttackPathSummary{},
 			Nodes:            []AttackPathNode{},
 			Edges:            []AttackPathEdge{},
 			KeyJumps:         []AttackPathEdge{},
@@ -165,6 +175,7 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 	overallRisk := calcPathRisk(edges)
 	keyJumps := pickKeyJumps(edges)
 	mitigations := buildPathMitigations(orderedProducts, edges)
+	summary := buildPathSummary(orderedProducts, edges)
 
 	c.JSON(http.StatusOK, AttackPathResponse{
 		TopologyID:      topology.ID,
@@ -174,6 +185,7 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		PathLength:      len(orderedProducts),
 		OverallRisk:     overallRisk,
 		RiskLevel:       riskLevelByScore(overallRisk),
+		Summary:         summary,
 		Nodes:           nodes,
 		Edges:           edges,
 		KeyJumps:        keyJumps,
@@ -299,6 +311,59 @@ func buildPathMitigations(products []models.Product, edges []AttackPathEdge) []s
 	}
 
 	return mitigations
+}
+
+func buildPathSummary(products []models.Product, edges []AttackPathEdge) AttackPathSummary {
+	if len(edges) == 0 {
+		return AttackPathSummary{}
+	}
+
+	total := 0
+	maxRisk := 0
+	highRiskCount := 0
+	nodeRisk := make(map[int]int)
+
+	for _, edge := range edges {
+		total += edge.RiskScore
+		if edge.RiskScore > maxRisk {
+			maxRisk = edge.RiskScore
+		}
+		if edge.RiskScore >= 70 {
+			highRiskCount++
+		}
+
+		if edge.RiskScore > nodeRisk[edge.FromProductID] {
+			nodeRisk[edge.FromProductID] = edge.RiskScore
+		}
+		if edge.RiskScore > nodeRisk[edge.ToProductID] {
+			nodeRisk[edge.ToProductID] = edge.RiskScore
+		}
+	}
+
+	weakestNodeID := 0
+	weakestNodeName := ""
+	weakestNodeRisk := -1
+	for _, p := range products {
+		risk := nodeRisk[int(p.ID)]
+		if risk > weakestNodeRisk {
+			weakestNodeRisk = risk
+			weakestNodeID = int(p.ID)
+			weakestNodeName = p.Name
+		}
+	}
+
+	avg := float64(total) / float64(len(edges))
+	return AttackPathSummary{
+		AvgJumpRisk:       attackPathRound2(avg),
+		MaxJumpRisk:       maxRisk,
+		HighRiskJumpCount: highRiskCount,
+		WeakestNodeID:     weakestNodeID,
+		WeakestNodeName:   weakestNodeName,
+	}
+}
+
+func attackPathRound2(v float64) float64 {
+	return float64(int(v*100+0.5)) / 100
 }
 
 func riskLevelByScore(score int) string {
