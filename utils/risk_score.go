@@ -3,7 +3,10 @@ package utils
 import (
 	"math"
 	"sort"
+	"time"
 )
+
+const RiskModelVersion = "v1.2.0"
 
 type RiskWeights struct {
 	CoverageGap  float64 `json:"coverage_gap"`
@@ -12,6 +15,8 @@ type RiskWeights struct {
 }
 
 type RiskScore struct {
+	ModelVersion     string      `json:"model_version"`
+	CalculatedAt     string      `json:"calculated_at"`
 	Score            float64     `json:"score"`
 	Level            string      `json:"level"`
 	CoverageGapRate  float64     `json:"coverage_gap_rate"`
@@ -39,9 +44,13 @@ func DefaultRiskWeights() RiskWeights {
 }
 
 func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights RiskWeights) RiskScore {
+	calculatedAt := time.Now().UTC().Format(time.RFC3339)
+
 	if totalFunctions <= 0 {
 		level := riskLevel(100)
 		return RiskScore{
+			ModelVersion:    RiskModelVersion,
+			CalculatedAt:    calculatedAt,
 			Score:           100,
 			Level:           level,
 			CoverageGapRate: 100,
@@ -110,6 +119,8 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 	level := riskLevel(score)
 
 	return RiskScore{
+		ModelVersion:    RiskModelVersion,
+		CalculatedAt:    calculatedAt,
 		Score:           round2(score),
 		Level:           level,
 		CoverageGapRate: round2(coverageGapRate),
