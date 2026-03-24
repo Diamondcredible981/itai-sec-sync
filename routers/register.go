@@ -40,6 +40,7 @@ func RegisterRouters(r *gin.Engine, db *gorm.DB) {
 	r.DELETE("/topo/:id", s.DeleteTopo)
 	r.POST("/topo/:id/copy", s.CopyTopo)                     // 复制拓扑
 	r.GET("/topo/:id/visualization", s.GetTopoVisualization) // 获取可视化数据
+	r.GET("/topo/:id/attack-path", s.GetAttackPathByTopoID)  // 攻击路径推演
 
 	// 冗余和空缺分析
 	r.POST("/analyze", s.AnalyzeByProductIDs)
