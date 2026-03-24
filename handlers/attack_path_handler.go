@@ -29,6 +29,8 @@ type AttackPathEdge struct {
 type AttackPathResponse struct {
 	TopologyID   uint             `json:"topology_id"`
 	TopologyName string           `json:"topology_name"`
+	SourceProductID *int          `json:"source_product_id,omitempty"`
+	TargetProductID *int          `json:"target_product_id,omitempty"`
 	PathLength   int              `json:"path_length"`
 	OverallRisk  int              `json:"overall_risk"`
 	RiskLevel    string           `json:"risk_level"`
@@ -52,18 +54,18 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 	}
 	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)
 
-	if len(topology.ProductIDs) < 2 {
-		c.JSON(http.StatusOK, AttackPathResponse{
-			TopologyID:   topology.ID,
-			TopologyName: topology.Name,
-			PathLength:   len(topology.ProductIDs),
-			OverallRisk:  0,
-			RiskLevel:    "low",
-			Nodes:        []AttackPathNode{},
-			Edges:        []AttackPathEdge{},
-			KeyJumps:     []AttackPathEdge{},
-			Mitigations:  []string{"当前拓扑节点不足以形成横向攻击路径，建议持续监控并保持最小暴露面"},
-		})
+	sourceProductID, hasSource, err := parseOptionalInt(c.Query("source_product_id"))
+	if err != nil {
+		s.badRequest(c, "source_product_id 参数无效")
+		return
+	}
+	targetProductID, hasTarget, err := parseOptionalInt(c.Query("target_product_id"))
+	if err != nil {
+		s.badRequest(c, "target_product_id 参数无效")
+		return
+	}
+	if hasSource != hasTarget {
+		s.badRequest(c, "source_product_id 和 target_product_id 需同时提供")
 		return
 	}
 
@@ -88,6 +90,49 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		if p, ok := productMap[productID]; ok {
 			orderedProducts = append(orderedProducts, p)
 		}
+	}
+
+	var sourcePtr *int
+	var targetPtr *int
+	if hasSource && hasTarget {
+		startIndex, endIndex := -1, -1
+		for i, p := range orderedProducts {
+			if int(p.ID) == sourceProductID {
+				startIndex = i
+			}
+			if int(p.ID) == targetProductID {
+				endIndex = i
+			}
+		}
+		if startIndex == -1 || endIndex == -1 {
+			s.badRequest(c, "指定的 source/target 产品不在该拓扑中")
+			return
+		}
+		if startIndex >= endIndex {
+			s.badRequest(c, "source_product_id 必须位于 target_product_id 之前")
+			return
+		}
+
+		orderedProducts = orderedProducts[startIndex : endIndex+1]
+		sourcePtr = &sourceProductID
+		targetPtr = &targetProductID
+	}
+
+	if len(orderedProducts) < 2 {
+		c.JSON(http.StatusOK, AttackPathResponse{
+			TopologyID:       topology.ID,
+			TopologyName:     topology.Name,
+			SourceProductID:  sourcePtr,
+			TargetProductID:  targetPtr,
+			PathLength:       len(orderedProducts),
+			OverallRisk:      0,
+			RiskLevel:        "low",
+			Nodes:            []AttackPathNode{},
+			Edges:            []AttackPathEdge{},
+			KeyJumps:         []AttackPathEdge{},
+			Mitigations:      []string{"当前路径节点不足以形成横向攻击路径，建议持续监控并保持最小暴露面"},
+		})
+		return
 	}
 
 	nodes := make([]AttackPathNode, 0, len(orderedProducts))
@@ -122,16 +167,29 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 	mitigations := buildPathMitigations(orderedProducts, edges)
 
 	c.JSON(http.StatusOK, AttackPathResponse{
-		TopologyID:   topology.ID,
-		TopologyName: topology.Name,
-		PathLength:   len(orderedProducts),
-		OverallRisk:  overallRisk,
-		RiskLevel:    riskLevelByScore(overallRisk),
-		Nodes:        nodes,
-		Edges:        edges,
-		KeyJumps:     keyJumps,
-		Mitigations:  mitigations,
+		TopologyID:      topology.ID,
+		TopologyName:    topology.Name,
+		SourceProductID: sourcePtr,
+		TargetProductID: targetPtr,
+		PathLength:      len(orderedProducts),
+		OverallRisk:     overallRisk,
+		RiskLevel:       riskLevelByScore(overallRisk),
+		Nodes:           nodes,
+		Edges:           edges,
+		KeyJumps:        keyJumps,
+		Mitigations:     mitigations,
 	})
+}
+
+func parseOptionalInt(v string) (int, bool, error) {
+	if v == "" {
+		return 0, false, nil
+	}
+	parsed, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, true, err
+	}
+	return parsed, true, nil
 }
 
 func estimateEdgeRisk(src, dst models.Product, typeMap map[uint]models.ProductType) (int, string, string) {
