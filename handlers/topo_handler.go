@@ -13,17 +13,144 @@ import (
 	"gorm.io/gorm"
 )
 
+const topoVisualizationSchemaVersion = "v1"
+
+type topoVisualizationNode struct {
+	ID       string                 `json:"id"`
+	Label    string                 `json:"label"`
+	Type     string                 `json:"type,omitempty"`
+	Category string                 `json:"category,omitempty"`
+	Icon     string                 `json:"icon,omitempty"`
+	Color    string                 `json:"color,omitempty"`
+	X        int                    `json:"x"`
+	Y        int                    `json:"y"`
+	Data     map[string]interface{} `json:"data,omitempty"`
+	Product  *models.Product        `json:"product,omitempty"`
+}
+
+type topoVisualizationEdge struct {
+	ID        string `json:"id"`
+	Source    string `json:"source"`
+	Target    string `json:"target"`
+	Type      string `json:"type"`
+	Direction string `json:"direction,omitempty"`
+	Risk      int    `json:"risk,omitempty"`
+	Weight    int    `json:"weight,omitempty"`
+}
+
+type topoVisualizationMeta struct {
+	SchemaVersion  string `json:"schema_version"`
+	NodeCount      int    `json:"node_count"`
+	EdgeCount      int    `json:"edge_count"`
+	HasCoordinates bool   `json:"has_coordinates"`
+	LayoutHint     string `json:"layout_hint"`
+}
+
+type topoSummaryItem struct {
+	ID           uint  `json:"id"`
+	Name         string `json:"name"`
+	NodeCount    int64 `json:"node_count"`
+	EdgeCount    int64 `json:"edge_count"`
+	ProductCount int64 `json:"product_count"`
+}
+
 // 获取所有网络拓扑
 func (s *Service) ListTopos(c *gin.Context) {
+	mode := c.DefaultQuery("mode", "full")
+	if mode != "full" && mode != "summary" {
+		s.badRequest(c, "mode 参数仅支持 full 或 summary")
+		return
+	}
+	includeProducts := true
+	if raw := c.Query("include_products"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			s.badRequest(c, "include_products 参数仅支持 true 或 false")
+			return
+		}
+		includeProducts = parsed
+	}
+
 	var topologies []models.NetworkTopo
 	s.DB.Find(&topologies)
 
-	var allProducts []models.Product
-	s.DB.Find(&allProducts)
+	if mode == "summary" {
+		nodeCountByTopo := make(map[uint]int64)
+		edgeCountByTopo := make(map[uint]int64)
+		productCountByTopo := make(map[uint]int64)
+
+		var nodeStats []struct {
+			TopoID uint
+			Count  int64
+		}
+		if err := s.DB.Model(&models.TopoNode{}).
+			Select("topo_id, COUNT(*) AS count").
+			Group("topo_id").
+			Scan(&nodeStats).Error; err != nil {
+			s.internalError(c, "读取拓扑摘要失败")
+			return
+		}
+		for _, st := range nodeStats {
+			nodeCountByTopo[st.TopoID] = st.Count
+		}
+
+		var edgeStats []struct {
+			TopoID uint
+			Count  int64
+		}
+		if err := s.DB.Model(&models.TopoEdge{}).
+			Select("topo_id, COUNT(*) AS count").
+			Group("topo_id").
+			Scan(&edgeStats).Error; err != nil {
+			s.internalError(c, "读取拓扑摘要失败")
+			return
+		}
+		for _, st := range edgeStats {
+			edgeCountByTopo[st.TopoID] = st.Count
+		}
+
+		var productStats []struct {
+			TopoID uint
+			Count  int64
+		}
+		if err := s.DB.Model(&models.TopoNode{}).
+			Select("topo_id, COUNT(DISTINCT product_id) AS count").
+			Where("product_id IS NOT NULL").
+			Group("topo_id").
+			Scan(&productStats).Error; err != nil {
+			s.internalError(c, "读取拓扑摘要失败")
+			return
+		}
+		for _, st := range productStats {
+			productCountByTopo[st.TopoID] = st.Count
+		}
+
+		summaries := make([]topoSummaryItem, 0, len(topologies))
+		for _, topo := range topologies {
+			summaries = append(summaries, topoSummaryItem{
+				ID:           topo.ID,
+				Name:         topo.Name,
+				NodeCount:    nodeCountByTopo[topo.ID],
+				EdgeCount:    edgeCountByTopo[topo.ID],
+				ProductCount: productCountByTopo[topo.ID],
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"mode": "summary",
+			"items": summaries,
+		})
+		return
+	}
+
 	productMap := make(map[int]models.Product)
-	for _, p := range allProducts {
-		p.FunctionIDs = utils.StringToIntSlice(p.FunctionIDsStr)
-		productMap[int(p.ID)] = p
+	if includeProducts {
+		var allProducts []models.Product
+		s.DB.Find(&allProducts)
+		for _, p := range allProducts {
+			p.FunctionIDs = utils.StringToIntSlice(p.FunctionIDsStr)
+			productMap[int(p.ID)] = p
+		}
 	}
 
 	for i := range topologies {
@@ -42,7 +169,7 @@ func (s *Service) ListTopos(c *gin.Context) {
 		topologies[i].Nodes = nodes
 		topologies[i].Edges = edges
 
-		if len(topologies[i].ProductIDs) > 0 {
+		if includeProducts && len(topologies[i].ProductIDs) > 0 {
 			products := make([]models.Product, 0, len(topologies[i].ProductIDs))
 			for _, pid := range topologies[i].ProductIDs {
 				if p, ok := productMap[pid]; ok {
@@ -399,8 +526,8 @@ func (s *Service) GetTopoVisualization(c *gin.Context) {
 		return
 	}
 
-	var nodes []map[string]interface{}
-	var edges []map[string]interface{}
+	var nodes []topoVisualizationNode
+	var edges []topoVisualizationEdge
 
 	nodeMap := make(map[string]models.TopoNode)
 
@@ -427,24 +554,28 @@ func (s *Service) GetTopoVisualization(c *gin.Context) {
 
 	for _, n := range topology.Nodes {
 		nodeMap[n.NodeKey] = n
-		item := map[string]interface{}{
-			"id":          n.NodeKey,
-			"label":       n.Name,
-			"node_type":   n.NodeType,
-			"zone":        n.Zone,
-			"criticality": n.Criticality,
-			"x":           100 + (n.Layer%5)*150,
-			"y":           100 + (n.Layer/5)*100,
+		item := topoVisualizationNode{
+			ID:    n.NodeKey,
+			Label: n.Name,
+			X:     100 + (n.Layer%5)*150,
+			Y:     100 + (n.Layer/5)*100,
+			Data: map[string]interface{}{
+				"node_key":    n.NodeKey,
+				"node_type":   n.NodeType,
+				"zone":        n.Zone,
+				"criticality": n.Criticality,
+				"layer":       n.Layer,
+			},
 		}
 
 		if n.ProductID != nil {
 			if p, ok := productMap[int(*n.ProductID)]; ok {
-				item["product"] = p
+				item.Product = &p
 				if pt, ok := ptMap[p.TypeID]; ok {
-					item["type"] = pt.Name
-					item["category"] = pt.Name
-					item["icon"] = pt.Icon
-					item["color"] = pt.Color
+					item.Type = pt.Name
+					item.Category = pt.Name
+					item.Icon = pt.Icon
+					item.Color = pt.Color
 				}
 			}
 		}
@@ -459,20 +590,36 @@ func (s *Service) GetTopoVisualization(c *gin.Context) {
 		if _, ok := nodeMap[e.ToNodeKey]; !ok {
 			continue
 		}
-		edges = append(edges, map[string]interface{}{
-			"source":    e.FromNodeKey,
-			"target":    e.ToNodeKey,
-			"type":      e.EdgeType,
-			"direction": e.Direction,
-			"risk":      e.Risk,
+		edges = append(edges, topoVisualizationEdge{
+			ID:        buildTopoEdgeID(e),
+			Source:    e.FromNodeKey,
+			Target:    e.ToNodeKey,
+			Type:      e.EdgeType,
+			Direction: e.Direction,
+			Risk:      e.Risk,
+			Weight:    e.Weight,
 		})
 	}
 
+	meta := topoVisualizationMeta{
+		SchemaVersion:  topoVisualizationSchemaVersion,
+		NodeCount:      len(nodes),
+		EdgeCount:      len(edges),
+		HasCoordinates: true,
+		LayoutHint:     "layered-grid",
+	}
+
 	c.JSON(http.StatusOK, gin.H{
+		"schema_version": topoVisualizationSchemaVersion,
+		"meta":           meta,
 		"nodes":    nodes,
 		"edges":    edges,
 		"topology": topology,
 	})
+}
+
+func buildTopoEdgeID(edge models.TopoEdge) string {
+	return fmt.Sprintf("%s|%s|%s|%s", edge.FromNodeKey, edge.ToNodeKey, edge.EdgeType, edge.Direction)
 }
 
 func (s *Service) normalizeTopoInput(productIDs []int, nodes []models.TopoNode, edges []models.TopoEdge) ([]int, []models.TopoNode, []models.TopoEdge, error) {
