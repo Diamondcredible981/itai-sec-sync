@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"github.com/iMayday-Yee/XinchuangAnalyze/utils"
-	"net/http"
-	"strconv"
 )
 
 type Operation struct {
@@ -29,14 +30,14 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 	// 1. 获取拓扑ID
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	// 2. 获取拓扑信息
 	var topology models.NetworkTopo
 	if err := s.DB.First(&topology, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "网络拓扑不存在"})
+		s.notFound(c, "网络拓扑不存在")
 		return
 	}
 	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)

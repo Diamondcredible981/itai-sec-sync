@@ -1,10 +1,11 @@
 package handlers
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"net/http"
 	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 )
 
 // 获取所有功能点
@@ -18,13 +19,13 @@ func (s *Service) ListFunctions(c *gin.Context) {
 func (s *Service) GetFunction(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	var function models.Function
 	if err := s.DB.First(&function, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "功能点不存在"})
+		s.notFound(c, "功能点不存在")
 		return
 	}
 
@@ -35,12 +36,12 @@ func (s *Service) GetFunction(c *gin.Context) {
 func (s *Service) AddFunction(c *gin.Context) {
 	var function models.Function
 	if err := c.ShouldBindJSON(&function); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 
 	if err := s.DB.Create(&function).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+		s.internalError(c, "创建失败")
 		return
 	}
 
@@ -51,23 +52,23 @@ func (s *Service) AddFunction(c *gin.Context) {
 func (s *Service) UpdateFunction(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	var function models.Function
 	if err := s.DB.First(&function, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "功能点不存在"})
+		s.notFound(c, "功能点不存在")
 		return
 	}
 
 	if err := c.ShouldBindJSON(&function); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 
 	if err := s.DB.Save(&function).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		s.internalError(c, "更新失败")
 		return
 	}
 
@@ -78,12 +79,12 @@ func (s *Service) UpdateFunction(c *gin.Context) {
 func (s *Service) DeleteFunction(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	if err := s.DB.Delete(&models.Function{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		s.internalError(c, "删除失败")
 		return
 	}
 

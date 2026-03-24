@@ -1,11 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"github.com/iMayday-Yee/XinchuangAnalyze/utils"
-	"net/http"
-	"strconv"
 )
 
 // 获取所有产品
@@ -32,13 +33,13 @@ func (s *Service) ListProducts(c *gin.Context) {
 func (s *Service) GetProduct(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	var product models.Product
 	if err := s.DB.First(&product, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "产品不存在"})
+		s.notFound(c, "产品不存在")
 		return
 	}
 
@@ -52,14 +53,14 @@ func (s *Service) GetProduct(c *gin.Context) {
 func (s *Service) AddProduct(c *gin.Context) {
 	var product models.Product
 	if err := c.ShouldBindJSON(&product); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 
 	// 验证产品类型是否存在
 	var productType models.ProductType
 	if err := s.DB.First(&productType, product.TypeID).Error; err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "产品类型不存在"})
+		s.badRequest(c, "产品类型不存在")
 		return
 	}
 
@@ -77,7 +78,7 @@ func (s *Service) AddProduct(c *gin.Context) {
 		}
 
 		if !utils.ValidateIntSlice(product.FunctionIDs, validFunctionIDs) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "部分功能点不存在"})
+			s.badRequest(c, "部分功能点不存在")
 			return
 		}
 	}
@@ -86,7 +87,7 @@ func (s *Service) AddProduct(c *gin.Context) {
 	product.FunctionIDsStr = utils.IntSliceToString(product.FunctionIDs)
 
 	if err := s.DB.Create(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+		s.internalError(c, "创建失败")
 		return
 	}
 
@@ -97,19 +98,19 @@ func (s *Service) AddProduct(c *gin.Context) {
 func (s *Service) UpdateProduct(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
 	var product models.Product
 	if err := s.DB.First(&product, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "产品不存在"})
+		s.notFound(c, "产品不存在")
 		return
 	}
 
 	var updateData models.Product
 	if err := c.ShouldBindJSON(&updateData); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 
@@ -117,7 +118,7 @@ func (s *Service) UpdateProduct(c *gin.Context) {
 	if updateData.TypeID != 0 {
 		var productType models.ProductType
 		if err := s.DB.First(&productType, updateData.TypeID).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "产品类型不存在"})
+			s.badRequest(c, "产品类型不存在")
 			return
 		}
 		product.TypeID = updateData.TypeID
@@ -137,7 +138,7 @@ func (s *Service) UpdateProduct(c *gin.Context) {
 		}
 
 		if !utils.ValidateIntSlice(updateData.FunctionIDs, validFunctionIDs) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "部分功能点不存在"})
+			s.badRequest(c, "部分功能点不存在")
 			return
 		}
 
@@ -154,7 +155,7 @@ func (s *Service) UpdateProduct(c *gin.Context) {
 	}
 
 	if err := s.DB.Save(&product).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		s.internalError(c, "更新失败")
 		return
 	}
 
@@ -165,7 +166,7 @@ func (s *Service) UpdateProduct(c *gin.Context) {
 func (s *Service) DeleteProduct(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 
@@ -177,14 +178,14 @@ func (s *Service) DeleteProduct(c *gin.Context) {
 		productIDs := utils.StringToIntSlice(topology.ProductIDsStr)
 		for _, productID := range productIDs {
 			if productID == id {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "该产品正在被网络拓扑使用，无法删除"})
+				s.badRequest(c, "该产品正在被网络拓扑使用，无法删除")
 				return
 			}
 		}
 	}
 
 	if err := s.DB.Delete(&models.Product{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		s.internalError(c, "删除失败")
 		return
 	}
 
@@ -198,7 +199,7 @@ func (s *Service) GetProductsByIDs(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 

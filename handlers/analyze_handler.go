@@ -1,17 +1,18 @@
 package handlers
 
 import (
+	"net/http"
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"github.com/iMayday-Yee/XinchuangAnalyze/utils"
-	"net/http"
-	"strconv"
 )
 
 func (s *Service) AnalyzeByProductIDs(c *gin.Context) {
 	var topology models.NetworkTopo
 	if err := c.ShouldBindJSON(&topology); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.badRequest(c, err.Error())
 		return
 	}
 
@@ -58,12 +59,12 @@ func (s *Service) AnalyzeByProductIDs(c *gin.Context) {
 func (s *Service) AnalyzeByTopoID(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		s.badRequest(c, "无效的ID")
 		return
 	}
 	var topology models.NetworkTopo
 	if err := s.DB.First(&topology, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "网络拓扑不存在"})
+		s.notFound(c, "网络拓扑不存在")
 		return
 	}
 	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)
