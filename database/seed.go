@@ -1,6 +1,8 @@
 package database
 
 import (
+	"fmt"
+
 	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"github.com/iMayday-Yee/XinchuangAnalyze/utils"
 	"gorm.io/gorm"
@@ -254,66 +256,124 @@ func SeedData(db *gorm.DB) {
 		db.FirstOrCreate(&product, models.Product{ID: product.ID})
 	}
 
-	// 初始化网络拓扑数据
+	// 初始化网络拓扑数据（新图模式）
 	topologies := []models.NetworkTopo{
-		{
-			ID:            1,
-			Name:          "企业网络安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{1, 4, 8, 12, 15, 18, 22, 24}),
-		},
-		{
-			ID:            2,
-			Name:          "政务云安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{2, 5, 6, 10, 13, 16, 20, 23, 25}),
-		},
-		{
-			ID:            3,
-			Name:          "金融行业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{3, 4, 6, 7, 11, 14, 17, 19, 21, 22, 24}),
-		},
-		{
-			ID:            4,
-			Name:          "互联网企业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{1, 2, 5, 10, 11, 12, 15, 18, 20, 22, 25}),
-		},
-		{
-			ID:            5,
-			Name:          "教育行业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{2, 4, 8, 9, 13, 16, 19, 23, 24}),
-		},
-		{
-			ID:            6,
-			Name:          "医疗行业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{1, 3, 6, 10, 12, 15, 18, 21, 22, 24}),
-		},
-		{
-			ID:            7,
-			Name:          "制造业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{2, 5, 7, 8, 14, 17, 19, 23, 25}),
-		},
-		{
-			ID:            8,
-			Name:          "小型企业安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{1, 4, 12, 18, 22}),
-		},
-		{
-			ID:            9,
-			Name:          "零信任架构拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{3, 6, 8, 9, 11, 14, 17, 19, 21}),
-		},
-		{
-			ID:            10,
-			Name:          "云原生安全拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{2, 3, 5, 10, 11, 13, 16, 20, 23, 25}),
-		},
-		{
-			ID:            11,
-			Name:          "超级冗余拓扑",
-			ProductIDsStr: utils.IntSliceToString([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25}),
-		},
+		{ID: 1, Name: "企业网络安全拓扑"},
+		{ID: 2, Name: "政务云安全拓扑"},
+		{ID: 3, Name: "金融行业安全拓扑"},
+		{ID: 4, Name: "互联网企业安全拓扑"},
+		{ID: 5, Name: "教育行业安全拓扑"},
+		{ID: 6, Name: "医疗行业安全拓扑"},
+		{ID: 7, Name: "制造业安全拓扑"},
+		{ID: 8, Name: "小型企业安全拓扑"},
+		{ID: 9, Name: "零信任架构拓扑"},
+		{ID: 10, Name: "云原生安全拓扑"},
+		{ID: 11, Name: "超级冗余拓扑"},
 	}
 
-	for _, topology := range topologies {
-		db.FirstOrCreate(&topology, models.NetworkTopo{ID: topology.ID})
+	topoProducts := map[uint][]int{
+		1:  {1, 4, 8, 12, 15, 18, 22, 24},
+		2:  {2, 5, 6, 10, 13, 16, 20, 23, 25},
+		3:  {3, 4, 6, 7, 11, 14, 17, 19, 21, 22, 24},
+		4:  {1, 2, 5, 10, 11, 12, 15, 18, 20, 22, 25},
+		5:  {2, 4, 8, 9, 13, 16, 19, 23, 24},
+		6:  {1, 3, 6, 10, 12, 15, 18, 21, 22, 24},
+		7:  {2, 5, 7, 8, 14, 17, 19, 23, 25},
+		8:  {1, 4, 12, 18, 22},
+		9:  {3, 6, 8, 9, 11, 14, 17, 19, 21},
+		10: {2, 3, 5, 10, 11, 13, 16, 20, 23, 25},
+		11: {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25},
 	}
+
+	productMap := make(map[int]models.Product)
+	for _, p := range products {
+		productMap[int(p.ID)] = p
+	}
+
+	for _, topo := range topologies {
+		db.FirstOrCreate(&topo, models.NetworkTopo{ID: topo.ID})
+
+		// 已有图结构则不覆盖，避免重启时破坏用户拓扑
+		var nodeCount int64
+		db.Model(&models.TopoNode{}).Where("topo_id = ?", topo.ID).Count(&nodeCount)
+		if nodeCount > 0 {
+			continue
+		}
+
+		nodes, edges := buildSeedGraph(topo.ID, topoProducts[topo.ID], productMap)
+		if len(nodes) > 0 {
+			db.Create(&nodes)
+		}
+		if len(edges) > 0 {
+			db.Create(&edges)
+		}
+	}
+}
+
+func buildSeedGraph(topoID uint, productIDs []int, productMap map[int]models.Product) ([]models.TopoNode, []models.TopoEdge) {
+	nodes := make([]models.TopoNode, 0, len(productIDs))
+	edges := make([]models.TopoEdge, 0)
+
+	for i, pid := range productIDs {
+		key := buildSeedNodeKey(topoID, pid, i+1)
+		pidU := uint(pid)
+
+		name := "设备"
+		vendor := ""
+		if p, ok := productMap[pid]; ok {
+			name = p.Name
+			vendor = p.Brand
+		}
+
+		nodeType := "hardware"
+		zone := "core"
+		if i < 2 {
+			zone = "edge"
+		} else if i > len(productIDs)-3 {
+			zone = "internal"
+		}
+
+		nodes = append(nodes, models.TopoNode{
+			TopoID:      topoID,
+			NodeKey:     key,
+			NodeType:    nodeType,
+			Name:        name,
+			Vendor:      vendor,
+			ProductID:   &pidU,
+			Criticality: "normal",
+			Zone:        zone,
+			Layer:       i + 1,
+		})
+
+		if i > 0 {
+			edges = append(edges, models.TopoEdge{
+				TopoID:      topoID,
+				FromNodeKey: nodes[i-1].NodeKey,
+				ToNodeKey:   key,
+				EdgeType:    "network",
+				Direction:   "uni",
+				Weight:      1,
+				Risk:        20,
+			})
+		}
+
+		// 每4个节点增加一条跨层边，形成更接近真实图结构
+		if i >= 3 && i%4 == 0 {
+			edges = append(edges, models.TopoEdge{
+				TopoID:      topoID,
+				FromNodeKey: nodes[i-3].NodeKey,
+				ToNodeKey:   key,
+				EdgeType:    "network",
+				Direction:   "uni",
+				Weight:      2,
+				Risk:        35,
+			})
+		}
+	}
+
+	return nodes, edges
+}
+
+func buildSeedNodeKey(topoID uint, productID int, index int) string {
+	return fmt.Sprintf("topo-%d-p%d-n%d", topoID, productID, index)
 }

@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/iMayday-Yee/XinchuangAnalyze/models"
@@ -24,7 +27,13 @@ func (s *Service) AnalyzeByProductIDs(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, s.buildAnalyzeResult(topology.ProductIDs))
+	result, err := s.buildAnalyzeResult(topology.ProductIDs)
+	if err != nil {
+		s.badRequest(c, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
 func (s *Service) AnalyzeByTopoID(c *gin.Context) {
@@ -38,12 +47,22 @@ func (s *Service) AnalyzeByTopoID(c *gin.Context) {
 		s.notFound(c, "网络拓扑不存在")
 		return
 	}
-	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)
+	topology.ProductIDs, err = s.deriveProductIDsFromTopo(topology.ID)
+	if err != nil {
+		s.internalError(c, "读取拓扑失败")
+		return
+	}
 
-	c.JSON(http.StatusOK, s.buildAnalyzeResult(topology.ProductIDs))
+	result, err := s.buildAnalyzeResult(topology.ProductIDs)
+	if err != nil {
+		s.internalError(c, "分析失败: "+err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
 
-func (s *Service) buildAnalyzeResult(productIDs []int) AnalyzeResult {
+func (s *Service) buildAnalyzeResult(productIDs []int) (AnalyzeResult, error) {
 	var allFunctions []models.Function
 	s.DB.Find(&allFunctions)
 
@@ -52,9 +71,34 @@ func (s *Service) buildAnalyzeResult(productIDs []int) AnalyzeResult {
 		functionMap[function.ID] = 0
 	}
 
-	for _, productID := range productIDs {
-		var product models.Product
-		s.DB.First(&product, productID)
+	uniqueIDs := utils.UniqueIntSlice(productIDs)
+	productMap := make(map[int]models.Product)
+	if len(uniqueIDs) > 0 {
+		var products []models.Product
+		s.DB.Where("id IN ?", uniqueIDs).Find(&products)
+
+		for _, p := range products {
+			productMap[int(p.ID)] = p
+		}
+
+		if len(productMap) != len(uniqueIDs) {
+			missing := make([]int, 0)
+			for _, id := range uniqueIDs {
+				if _, ok := productMap[id]; !ok {
+					missing = append(missing, id)
+				}
+			}
+			sort.Ints(missing)
+			missingTexts := make([]string, 0, len(missing))
+			for _, id := range missing {
+				missingTexts = append(missingTexts, strconv.Itoa(id))
+			}
+			return AnalyzeResult{}, fmt.Errorf("以下产品不存在: %s", strings.Join(missingTexts, ","))
+		}
+	}
+
+	for _, productID := range uniqueIDs {
+		product := productMap[productID]
 		functionIDs := utils.StringToIntSlice(product.FunctionIDsStr)
 		for _, functionID := range functionIDs {
 			functionMap[uint(functionID)]++
@@ -90,5 +134,5 @@ func (s *Service) buildAnalyzeResult(productIDs []int) AnalyzeResult {
 		CoverageRate:   coverageRate,
 		RedundancyRate: redundancyRate,
 		Risk:           risk,
-	}
+	}, nil
 }

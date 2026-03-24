@@ -70,7 +70,11 @@ func (s *Service) GetProductSuggestions(c *gin.Context) {
 		s.notFound(c, "网络拓扑不存在")
 		return
 	}
-	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)
+	topology.ProductIDs, err = s.deriveProductIDsFromTopo(topology.ID)
+	if err != nil {
+		s.internalError(c, "读取拓扑失败")
+		return
+	}
 
 	// 3. 获取所有功能点和所有产品
 	var allFunctions []models.Function

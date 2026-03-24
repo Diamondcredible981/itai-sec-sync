@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/iMayday-Yee/XinchuangAnalyze/models"
 	"gorm.io/gorm"
 )
 
@@ -43,4 +44,44 @@ func (s *Service) notFound(c *gin.Context, message string) {
 
 func (s *Service) internalError(c *gin.Context, message string) {
 	s.respondError(c, 500, "INTERNAL_ERROR", message)
+}
+
+func (s *Service) loadTopoGraph(topoID uint) ([]models.TopoNode, []models.TopoEdge, error) {
+	var nodes []models.TopoNode
+	if err := s.DB.Where("topo_id = ?", topoID).Order("layer ASC, id ASC").Find(&nodes).Error; err != nil {
+		return nil, nil, err
+	}
+
+	var edges []models.TopoEdge
+	if err := s.DB.Where("topo_id = ?", topoID).Find(&edges).Error; err != nil {
+		return nil, nil, err
+	}
+
+	return nodes, edges, nil
+}
+
+func (s *Service) deriveProductIDsFromTopo(topoID uint) ([]int, error) {
+	var nodes []models.TopoNode
+	if err := s.DB.Where("topo_id = ?", topoID).Order("layer ASC, id ASC").Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+
+	if len(nodes) == 0 {
+		return []int{}, nil
+	}
+
+	result := make([]int, 0)
+	seen := make(map[int]bool)
+	for _, n := range nodes {
+		if n.ProductID == nil {
+			continue
+		}
+		pid := int(*n.ProductID)
+		if !seen[pid] {
+			result = append(result, pid)
+			seen[pid] = true
+		}
+	}
+
+	return result, nil
 }

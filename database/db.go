@@ -19,6 +19,8 @@ func SetupDatabase() *gorm.DB {
 		&models.Function{},
 		&models.Product{},
 		&models.NetworkTopo{},
+		&models.TopoNode{},
+		&models.TopoEdge{},
 	)
 
 	// 初始化基础数据

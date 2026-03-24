@@ -170,18 +170,12 @@ func (s *Service) DeleteProduct(c *gin.Context) {
 		return
 	}
 
-	// 检查是否有网络拓扑使用此产品
-	var topologies []models.NetworkTopo
-	s.DB.Find(&topologies)
-
-	for _, topology := range topologies {
-		productIDs := utils.StringToIntSlice(topology.ProductIDsStr)
-		for _, productID := range productIDs {
-			if productID == id {
-				s.badRequest(c, "该产品正在被网络拓扑使用，无法删除")
-				return
-			}
-		}
+	// 检查是否有拓扑节点引用此产品
+	var usageCount int64
+	s.DB.Model(&models.TopoNode{}).Where("product_id = ?", id).Count(&usageCount)
+	if usageCount > 0 {
+		s.badRequest(c, "该产品正在被网络拓扑使用，无法删除")
+		return
 	}
 
 	if err := s.DB.Delete(&models.Product{}, id).Error; err != nil {
