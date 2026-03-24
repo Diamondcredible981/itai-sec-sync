@@ -202,13 +202,11 @@ func (s *Service) UpdateTopo(c *gin.Context) {
 		return
 	}
 
-	_, hasProductIDsField := rawPayload["product_ids"]
-	_, hasNodesField := rawPayload["nodes"]
-	_, hasEdgesField := rawPayload["edges"]
+	hasProductIDsField, hasNodesField, hasEdgesField := graphFieldPresence(rawPayload)
 
 	updateGraph := hasProductIDsField || hasNodesField || hasEdgesField
 	if updateGraph {
-		clearGraph := hasNodesField && hasEdgesField && len(updateData.Nodes) == 0 && len(updateData.Edges) == 0 && (!hasProductIDsField || len(updateData.ProductIDs) == 0)
+		clearGraph := isClearGraphRequest(hasProductIDsField, hasNodesField, hasEdgesField, updateData)
 		if clearGraph {
 			topology.ProductIDs = []int{}
 			topology.Nodes = []models.TopoNode{}
@@ -276,6 +274,17 @@ func (s *Service) UpdateTopo(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, topology)
+}
+
+func graphFieldPresence(rawPayload map[string]json.RawMessage) (bool, bool, bool) {
+	_, hasProductIDsField := rawPayload["product_ids"]
+	_, hasNodesField := rawPayload["nodes"]
+	_, hasEdgesField := rawPayload["edges"]
+	return hasProductIDsField, hasNodesField, hasEdgesField
+}
+
+func isClearGraphRequest(hasProductIDsField, hasNodesField, hasEdgesField bool, updateData models.NetworkTopo) bool {
+	return hasNodesField && hasEdgesField && len(updateData.Nodes) == 0 && len(updateData.Edges) == 0 && (!hasProductIDsField || len(updateData.ProductIDs) == 0)
 }
 
 // 删除网络拓扑

@@ -82,12 +82,7 @@ func (s *Service) buildAnalyzeResult(productIDs []int) (AnalyzeResult, error) {
 		}
 
 		if len(productMap) != len(uniqueIDs) {
-			missing := make([]int, 0)
-			for _, id := range uniqueIDs {
-				if _, ok := productMap[id]; !ok {
-					missing = append(missing, id)
-				}
-			}
+			missing := missingProductIDs(uniqueIDs, productMap)
 			sort.Ints(missing)
 			missingTexts := make([]string, 0, len(missing))
 			for _, id := range missing {
@@ -135,4 +130,14 @@ func (s *Service) buildAnalyzeResult(productIDs []int) (AnalyzeResult, error) {
 		RedundancyRate: redundancyRate,
 		Risk:           risk,
 	}, nil
+}
+
+func missingProductIDs(requested []int, productMap map[int]models.Product) []int {
+	missing := make([]int, 0)
+	for _, id := range requested {
+		if _, ok := productMap[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	return missing
 }

@@ -261,19 +261,7 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		}
 		blockedPtr = &blockedProductID
 
-		simulatedRisk := 0
-		simulatedPathLength := 0
-
-		// 固定使用基线路径端点进行阻断对比，避免模拟前后目标不一致。
-		if !blockedNodeKeys[baseSourceNodeKey] && !blockedNodeKeys[baseTargetNodeKey] {
-			simAdj := buildGraphArcs(topoEdges, blockedNodeKeys)
-			simNodePath, simArcs, simOK, _ := shortestPath(baseSourceNodeKey, baseTargetNodeKey, simAdj)
-			if simOK && len(simNodePath) >= 2 {
-				_, simEdges, simRisk, _, _, _ := buildPathArtifactsFromGraph(simNodePath, simArcs, nodesByKey, productMap, typeMap)
-				simulatedRisk = simRisk
-				simulatedPathLength = len(simEdges) + 1
-			}
-		}
+		simulatedRisk, simulatedPathLength := simulateAgainstBaselineEndpoints(baseSourceNodeKey, baseTargetNodeKey, blockedNodeKeys, topoEdges, nodesByKey, productMap, typeMap)
 
 		simulation = &AttackPathSimulation{
 			BlockedProductID:    blockedProductID,
@@ -523,6 +511,30 @@ func buildGraphPathSummary(nodeKeys []string, jumpRisks []int, nodesByKey map[st
 		WeakestNodeID:     weakestNodeID,
 		WeakestNodeName:   weakestNodeName,
 	}
+}
+
+func simulateAgainstBaselineEndpoints(
+	baseSourceNodeKey string,
+	baseTargetNodeKey string,
+	blockedNodeKeys map[string]bool,
+	topoEdges []models.TopoEdge,
+	nodesByKey map[string]models.TopoNode,
+	productMap map[int]models.Product,
+	typeMap map[uint]models.ProductType,
+) (int, int) {
+	// 固定使用基线路径端点进行阻断对比，避免模拟前后目标不一致。
+	if blockedNodeKeys[baseSourceNodeKey] || blockedNodeKeys[baseTargetNodeKey] {
+		return 0, 0
+	}
+
+	simAdj := buildGraphArcs(topoEdges, blockedNodeKeys)
+	simNodePath, simArcs, simOK, _ := shortestPath(baseSourceNodeKey, baseTargetNodeKey, simAdj)
+	if !simOK || len(simNodePath) < 2 {
+		return 0, 0
+	}
+
+	_, simEdges, simRisk, _, _, _ := buildPathArtifactsFromGraph(simNodePath, simArcs, nodesByKey, productMap, typeMap)
+	return simRisk, len(simEdges) + 1
 }
 
 func buildGraphMitigations(nodeKeys []string, arcs []graphArc, nodesByKey map[string]models.TopoNode, productMap map[int]models.Product) []string {
