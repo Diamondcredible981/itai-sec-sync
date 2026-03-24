@@ -31,6 +31,7 @@ type AttackPathResponse struct {
 	TopologyName string           `json:"topology_name"`
 	SourceProductID *int          `json:"source_product_id,omitempty"`
 	TargetProductID *int          `json:"target_product_id,omitempty"`
+	BlockedProductID *int         `json:"blocked_product_id,omitempty"`
 	PathLength   int              `json:"path_length"`
 	OverallRisk  int              `json:"overall_risk"`
 	RiskLevel    string           `json:"risk_level"`
@@ -39,6 +40,7 @@ type AttackPathResponse struct {
 	Edges        []AttackPathEdge `json:"edges"`
 	KeyJumps     []AttackPathEdge `json:"key_jumps"`
 	Mitigations  []string         `json:"mitigations"`
+	Simulation   *AttackPathSimulation `json:"simulation,omitempty"`
 }
 
 type AttackPathSummary struct {
@@ -47,6 +49,16 @@ type AttackPathSummary struct {
 	HighRiskJumpCount  int     `json:"high_risk_jump_count"`
 	WeakestNodeID      int     `json:"weakest_node_id"`
 	WeakestNodeName    string  `json:"weakest_node_name"`
+}
+
+type AttackPathSimulation struct {
+	BlockedProductID   int   `json:"blocked_product_id"`
+	BlockedProductName string `json:"blocked_product_name"`
+	BaseRisk           int   `json:"base_risk"`
+	SimulatedRisk      int   `json:"simulated_risk"`
+	RiskReduction      int   `json:"risk_reduction"`
+	BasePathLength     int   `json:"base_path_length"`
+	SimulatedPathLength int  `json:"simulated_path_length"`
 }
 
 func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
@@ -77,6 +89,11 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		s.badRequest(c, "source_product_id 和 target_product_id 需同时提供")
 		return
 	}
+	blockedProductID, hasBlocked, err := parseOptionalInt(c.Query("blocked_product_id"))
+	if err != nil {
+		s.badRequest(c, "blocked_product_id 参数无效")
+		return
+	}
 
 	var products []models.Product
 	s.DB.Where("id IN ?", topology.ProductIDs).Find(&products)
@@ -103,6 +120,7 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 
 	var sourcePtr *int
 	var targetPtr *int
+	var blockedPtr *int
 	if hasSource && hasTarget {
 		startIndex, endIndex := -1, -1
 		for i, p := range orderedProducts {
@@ -127,12 +145,28 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		targetPtr = &targetProductID
 	}
 
+	if hasBlocked {
+		foundBlocked := false
+		for _, p := range orderedProducts {
+			if int(p.ID) == blockedProductID {
+				foundBlocked = true
+				break
+			}
+		}
+		if !foundBlocked {
+			s.badRequest(c, "blocked_product_id 不在当前分析路径中")
+			return
+		}
+		blockedPtr = &blockedProductID
+	}
+
 	if len(orderedProducts) < 2 {
 		c.JSON(http.StatusOK, AttackPathResponse{
 			TopologyID:       topology.ID,
 			TopologyName:     topology.Name,
 			SourceProductID:  sourcePtr,
 			TargetProductID:  targetPtr,
+			BlockedProductID: blockedPtr,
 			PathLength:       len(orderedProducts),
 			OverallRisk:      0,
 			RiskLevel:        "low",
@@ -145,6 +179,49 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 		return
 	}
 
+	nodes, edges, overallRisk, keyJumps, mitigations, summary := buildPathArtifacts(orderedProducts, typeMap)
+
+	var simulation *AttackPathSimulation
+	if hasBlocked {
+		simulatedProducts := excludeProduct(orderedProducts, blockedProductID)
+		_, simulatedEdges, simulatedRisk, _, _, _ := buildPathArtifacts(simulatedProducts, typeMap)
+		blockedName := ""
+		for _, p := range orderedProducts {
+			if int(p.ID) == blockedProductID {
+				blockedName = p.Name
+				break
+			}
+		}
+		simulation = &AttackPathSimulation{
+			BlockedProductID:    blockedProductID,
+			BlockedProductName:  blockedName,
+			BaseRisk:            overallRisk,
+			SimulatedRisk:       simulatedRisk,
+			RiskReduction:       overallRisk - simulatedRisk,
+			BasePathLength:      len(orderedProducts),
+			SimulatedPathLength: len(simulatedEdges) + 1,
+		}
+	}
+
+	c.JSON(http.StatusOK, AttackPathResponse{
+		TopologyID:      topology.ID,
+		TopologyName:    topology.Name,
+		SourceProductID: sourcePtr,
+		TargetProductID: targetPtr,
+		BlockedProductID: blockedPtr,
+		PathLength:      len(orderedProducts),
+		OverallRisk:     overallRisk,
+		RiskLevel:       riskLevelByScore(overallRisk),
+		Summary:         summary,
+		Nodes:           nodes,
+		Edges:           edges,
+		KeyJumps:        keyJumps,
+		Mitigations:     mitigations,
+		Simulation:      simulation,
+	})
+}
+
+func buildPathArtifacts(orderedProducts []models.Product, typeMap map[uint]models.ProductType) ([]AttackPathNode, []AttackPathEdge, int, []AttackPathEdge, []string, AttackPathSummary) {
 	nodes := make([]AttackPathNode, 0, len(orderedProducts))
 	for i, p := range orderedProducts {
 		pt := typeMap[p.TypeID]
@@ -177,20 +254,17 @@ func (s *Service) GetAttackPathByTopoID(c *gin.Context) {
 	mitigations := buildPathMitigations(orderedProducts, edges)
 	summary := buildPathSummary(orderedProducts, edges)
 
-	c.JSON(http.StatusOK, AttackPathResponse{
-		TopologyID:      topology.ID,
-		TopologyName:    topology.Name,
-		SourceProductID: sourcePtr,
-		TargetProductID: targetPtr,
-		PathLength:      len(orderedProducts),
-		OverallRisk:     overallRisk,
-		RiskLevel:       riskLevelByScore(overallRisk),
-		Summary:         summary,
-		Nodes:           nodes,
-		Edges:           edges,
-		KeyJumps:        keyJumps,
-		Mitigations:     mitigations,
-	})
+	return nodes, edges, overallRisk, keyJumps, mitigations, summary
+}
+
+func excludeProduct(products []models.Product, blockedProductID int) []models.Product {
+	filtered := make([]models.Product, 0, len(products))
+	for _, p := range products {
+		if int(p.ID) != blockedProductID {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
 }
 
 func parseOptionalInt(v string) (int, bool, error) {
