@@ -9,6 +9,14 @@ import (
 	"github.com/iMayday-Yee/XinchuangAnalyze/utils"
 )
 
+type AnalyzeResult struct {
+	Redundant      []models.Function `json:"redundant"`
+	Missing        []models.Function `json:"missing"`
+	CoverageRate   float64           `json:"coverage_rate"`
+	RedundancyRate float64           `json:"redundancy_rate"`
+	Risk           utils.RiskScore   `json:"risk"`
+}
+
 func (s *Service) AnalyzeByProductIDs(c *gin.Context) {
 	var topology models.NetworkTopo
 	if err := c.ShouldBindJSON(&topology); err != nil {
@@ -16,44 +24,7 @@ func (s *Service) AnalyzeByProductIDs(c *gin.Context) {
 		return
 	}
 
-	// 获取所有功能点
-	var allFunctions []models.Function
-	s.DB.Find(&allFunctions)
-
-	functionMap := make(map[uint]int)
-	for _, function := range allFunctions {
-		functionMap[function.ID] = 0
-	}
-
-	// 统计各功能点的覆盖情况
-	for _, productID := range topology.ProductIDs {
-		var product models.Product
-		s.DB.First(&product, productID)
-		functionIDs := utils.StringToIntSlice(product.FunctionIDsStr)
-		for _, functionID := range functionIDs {
-			functionMap[uint(functionID)]++
-		}
-	}
-
-	var redundantFunctions []models.Function
-	var missingFunctions []models.Function
-
-	for _, function := range allFunctions {
-		count := functionMap[function.ID]
-		if count > 1 {
-			redundantFunctions = append(redundantFunctions, function)
-		}
-		if count == 0 {
-			missingFunctions = append(missingFunctions, function)
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"redundant":       redundantFunctions,
-		"missing":         missingFunctions,
-		"coverage_rate":   float64(len(allFunctions)-len(missingFunctions)) / float64(len(allFunctions)) * 100,
-		"redundancy_rate": float64(len(redundantFunctions)) / float64(len(allFunctions)) * 100,
-	})
+	c.JSON(http.StatusOK, s.buildAnalyzeResult(topology.ProductIDs))
 }
 
 func (s *Service) AnalyzeByTopoID(c *gin.Context) {
@@ -69,7 +40,10 @@ func (s *Service) AnalyzeByTopoID(c *gin.Context) {
 	}
 	topology.ProductIDs = utils.StringToIntSlice(topology.ProductIDsStr)
 
-	// 获取所有功能点
+	c.JSON(http.StatusOK, s.buildAnalyzeResult(topology.ProductIDs))
+}
+
+func (s *Service) buildAnalyzeResult(productIDs []int) AnalyzeResult {
 	var allFunctions []models.Function
 	s.DB.Find(&allFunctions)
 
@@ -78,8 +52,7 @@ func (s *Service) AnalyzeByTopoID(c *gin.Context) {
 		functionMap[function.ID] = 0
 	}
 
-	// 统计各功能点的覆盖情况
-	for _, productID := range topology.ProductIDs {
+	for _, productID := range productIDs {
 		var product models.Product
 		s.DB.First(&product, productID)
 		functionIDs := utils.StringToIntSlice(product.FunctionIDsStr)
@@ -101,10 +74,21 @@ func (s *Service) AnalyzeByTopoID(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"redundant":       redundantFunctions,
-		"missing":         missingFunctions,
-		"coverage_rate":   float64(len(allFunctions)-len(missingFunctions)) / float64(len(allFunctions)) * 100,
-		"redundancy_rate": float64(len(redundantFunctions)) / float64(len(allFunctions)) * 100,
-	})
+	total := len(allFunctions)
+	coverageRate := 0.0
+	redundancyRate := 0.0
+	if total > 0 {
+		coverageRate = float64(total-len(missingFunctions)) / float64(total) * 100
+		redundancyRate = float64(len(redundantFunctions)) / float64(total) * 100
+	}
+
+	risk := utils.CalculateRiskScore(total, functionMap, utils.DefaultRiskWeights())
+
+	return AnalyzeResult{
+		Redundant:      redundantFunctions,
+		Missing:        missingFunctions,
+		CoverageRate:   coverageRate,
+		RedundancyRate: redundancyRate,
+		Risk:           risk,
+	}
 }
