@@ -55,7 +55,7 @@
                 </div>
                 <div class="node-title">
                   <div class="node-name">{{ selectedNode.label }}</div>
-                  <div class="node-type">{{ selectedNode.data?.node_type || selectedNode.type }}</div>
+                  <div class="node-type">{{ selectedNode.type || selectedNode.data?.node_type }}</div>
                 </div>
               </div>
 
@@ -72,7 +72,7 @@
                   </div>
                   <div class="info-item">
                     <span class="info-label">类型</span>
-                    <span class="info-value">{{ selectedNode.product.type }}</span>
+                    <span class="info-value">{{ selectedNode.type }}</span>
                   </div>
                 </div>
               </div>
