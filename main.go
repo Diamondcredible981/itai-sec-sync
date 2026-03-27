@@ -11,6 +11,7 @@ import (
 func main() {
 	db := database.SetupDatabase()
 	router := gin.Default()
+	router.Use(middleware.CORS())
 	router.Use(middleware.AuditLogger())
 	routers.RegisterRouters(router, db)
 	router.Run(":8080")
