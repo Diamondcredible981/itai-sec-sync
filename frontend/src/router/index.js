@@ -25,8 +25,13 @@ const router = createRouter({
       component: () => import('../views/AnalysisView.vue')
     },
     {
-      path: '/suggest/:id',
+      path: '/suggest',
       name: 'suggest',
+      component: () => import('../views/SuggestView.vue')
+    },
+    {
+      path: '/suggest/:id',
+      name: 'suggest-detail',
       component: () => import('../views/SuggestView.vue')
     }
   ]

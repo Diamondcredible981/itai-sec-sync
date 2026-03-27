@@ -17,14 +17,14 @@
         <span class="logo-text">安全分析</span>
       </div>
       <div class="nav-items">
-        <router-link to="/" class="nav-item" active-class="active">
+        <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <path d="M12 6v6l4 2"/>
           </svg>
           <span>概览</span>
         </router-link>
-        <router-link to="/topology" class="nav-item" active-class="active">
+        <router-link to="/topology" class="nav-item" :class="{ active: isActive('/topology') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="6" cy="6" r="3"/>
             <circle cx="18" cy="6" r="3"/>
@@ -34,14 +34,14 @@
           </svg>
           <span>网络拓扑</span>
         </router-link>
-        <router-link to="/analysis" class="nav-item" active-class="active">
+        <router-link to="/analysis" class="nav-item" :class="{ active: isActive('/analysis') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M3 3v18h18"/>
             <path d="M7 16l4-4 4 4 6-6"/>
           </svg>
           <span>能力分析</span>
         </router-link>
-        <router-link to="/suggest" class="nav-item" active-class="active">
+        <router-link to="/suggest" class="nav-item" :class="{ active: isActive('/suggest') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2L2 7l10 5 10-5-10-5z"/>
             <path d="M2 17l10 5 10-5"/>
@@ -63,6 +63,19 @@
     </main>
   </div>
 </template>
+
+<script setup>
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+function isActive(path) {
+  if (path === '/') {
+    return route.path === '/'
+  }
+  return route.path.startsWith(path)
+}
+</script>
 
 <style scoped>
 .app {

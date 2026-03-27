@@ -23,7 +23,7 @@
       </div>
     </header>
 
-    <div class="page-content" v-if="result">
+    <div class="page-content" v-if="displayState === 'result'">
       <div class="result-header">
         <div class="result-status" :class="{ success: result.success }">
           <svg v-if="result.success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -86,13 +86,7 @@
         <div class="operations-grid">
           <div class="card add-card" v-if="result.add_operations?.length">
             <div class="card-header">
-              <h3 class="card-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19"/>
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                新增产品
-              </h3>
+              <h3 class="card-title">新增产品</h3>
               <span class="badge badge-success">{{ result.add_operations.length }}</span>
             </div>
             <div class="operation-list">
@@ -115,12 +109,7 @@
 
           <div class="card remove-card" v-if="result.remove_operations?.length">
             <div class="card-header">
-              <h3 class="card-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                移除产品
-              </h3>
+              <h3 class="card-title">移除产品</h3>
               <span class="badge badge-danger">{{ result.remove_operations.length }}</span>
             </div>
             <div class="operation-list">
@@ -149,23 +138,26 @@
       </div>
     </div>
 
-    <div class="empty-state" v-else-if="!loading">
+    <div class="empty-state" v-if="displayState === 'no-topo'">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
         <path d="M2 17l10 5 10-5"/>
         <path d="M2 12l10 5 10-5"/>
       </svg>
-      <p>正在生成优化方案...</p>
+      <p>请先从「能力分析」页面选择一个拓扑</p>
+      <router-link to="/analysis" class="btn btn-primary" style="margin-top: 16px;">
+        前往能力分析
+      </router-link>
     </div>
 
-    <div class="loading" v-if="loading">
+    <div class="loading" v-if="displayState === 'loading'">
       <div class="spinner"></div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { suggestApi, productApi } from '../api'
 
@@ -174,6 +166,15 @@ const loading = ref(false)
 const strategy = ref('min-change')
 const result = ref(null)
 const productTypes = ref([])
+const hasTopoId = ref(false)
+
+// 显示状态计算属性
+const displayState = computed(() => {
+  if (loading.value) return 'loading'
+  if (!hasTopoId.value) return 'no-topo'
+  if (result.value) return 'result'
+  return 'loading'
+})
 
 function getTypeName(typeId) {
   const t = productTypes.value.find(t => t.id === typeId)
@@ -203,7 +204,11 @@ async function loadProductTypes() {
 
 async function loadSuggestion() {
   const id = route.params.id
-  if (!id) return
+  hasTopoId.value = !!id
+
+  if (!id) {
+    return
+  }
 
   loading.value = true
   try {
@@ -219,6 +224,15 @@ async function loadSuggestion() {
 watch(strategy, () => {
   if (route.params.id) {
     loadSuggestion()
+  }
+})
+
+watch(() => route.params.id, (newId) => {
+  hasTopoId.value = !!newId
+  if (newId) {
+    loadSuggestion()
+  } else {
+    result.value = null
   }
 })
 
@@ -256,7 +270,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24px 32px;
+  padding: 16px 24px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
@@ -282,21 +296,24 @@ onMounted(async () => {
 }
 
 .operation-count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   text-align: right;
 }
 
 .operation-count .count {
-  font-size: 36px;
+  font-size: 28px;
   font-weight: 700;
   font-family: var(--font-mono);
   background: var(--accent-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+  line-height: 1;
 }
 
 .operation-count .label {
-  display: block;
   font-size: 13px;
   color: var(--text-tertiary);
 }
@@ -448,5 +465,58 @@ onMounted(async () => {
   display: flex;
   justify-content: center;
   margin-top: 40px;
+}
+
+.operations-section {
+  width: 100%;
+}
+
+.operations-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .operations-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.operations-grid .card {
+  width: 100%;
+  min-width: 0;
+}
+
+.operations-grid h3.card-title {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.operations-grid h3.card-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: var(--accent-gradient);
+  border-radius: 2px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.operations-grid .card-header {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.operations-grid .badge {
+  flex-shrink: 0;
 }
 </style>
