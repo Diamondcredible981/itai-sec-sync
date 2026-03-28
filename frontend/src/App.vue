@@ -49,6 +49,13 @@
           </svg>
           <span>优化建议</span>
         </router-link>
+        <router-link to="/manage" class="nav-item" :class="{ active: isActive('/manage') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 9h6M9 15h6M9 12h6"/>
+          </svg>
+          <span>数据管理</span>
+        </router-link>
       </div>
       <div class="nav-footer">
         <div class="version">v1.0.0</div>

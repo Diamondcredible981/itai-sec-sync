@@ -33,6 +33,11 @@ const router = createRouter({
       path: '/suggest/:id',
       name: 'suggest-detail',
       component: () => import('../views/SuggestView.vue')
+    },
+    {
+      path: '/manage',
+      name: 'manage',
+      component: () => import('../views/ManageView.vue')
     }
   ]
 })

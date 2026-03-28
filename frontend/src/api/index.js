@@ -13,16 +13,34 @@ api.interceptors.response.use(
   }
 )
 
+// 产品类型 CRUD
+export const productTypeApi = {
+  list: () => api.get('/type'),
+  get: (id) => api.get(`/type/${id}`),
+  create: (data) => api.post('/type', data),
+  update: (id, data) => api.put(`/type/${id}`, data),
+  delete: (id) => api.delete(`/type/${id}`)
+}
+
+// 功能点 CRUD
+export const functionApi = {
+  list: () => api.get('/function'),
+  get: (id) => api.get(`/function/${id}`),
+  create: (data) => api.post('/function', data),
+  update: (id, data) => api.put(`/function/${id}`, data),
+  delete: (id) => api.delete(`/function/${id}`),
+  getByCategory: (category) => api.get('/functions/by-category', { params: { category } })
+}
+
+// 产品 CRUD
 export const productApi = {
   list: (params) => api.get('/type', { params }),
   listProducts: (params) => api.get('/product', { params }),
   getProduct: (id) => api.get(`/product/${id}`),
+  create: (data) => api.post('/product', data),
+  update: (id, data) => api.put(`/product/${id}`, data),
+  delete: (id) => api.delete(`/product/${id}`),
   getProductsByIds: (ids) => api.post('/products/batch', { product_ids: ids })
-}
-
-export const functionApi = {
-  list: () => api.get('/function'),
-  getByCategory: () => api.get('/functions/by-category')
 }
 
 export const topoApi = {
