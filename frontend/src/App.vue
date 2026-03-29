@@ -24,7 +24,7 @@
           </svg>
           <span>概览</span>
         </router-link>
-        <router-link to="/topology" class="nav-item" :class="{ active: isActive('/topology') }">
+        <router-link to="/topology" class="nav-item" :class="{ active: isActive('/topology') && !isActive('/topology-manage') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="6" cy="6" r="3"/>
             <circle cx="18" cy="6" r="3"/>
@@ -33,6 +33,14 @@
             <path d="M6 9v6M18 9v6M9 6h6M9 18h6"/>
           </svg>
           <span>网络拓扑</span>
+        </router-link>
+        <router-link to="/topology-manage" class="nav-item" :class="{ active: isActive('/topology-manage') }">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span>拓扑管理</span>
         </router-link>
         <router-link to="/analysis" class="nav-item" :class="{ active: isActive('/analysis') }">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

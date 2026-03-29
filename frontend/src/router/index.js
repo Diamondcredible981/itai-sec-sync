@@ -38,6 +38,11 @@ const router = createRouter({
       path: '/manage',
       name: 'manage',
       component: () => import('../views/ManageView.vue')
+    },
+    {
+      path: '/topology-manage',
+      name: 'topology-manage',
+      component: () => import('../views/TopologyManageView.vue')
     }
   ]
 })
