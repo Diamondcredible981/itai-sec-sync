@@ -66,6 +66,36 @@
         </router-link>
       </div>
       <div class="nav-footer">
+        <label class="theme-switch">
+          <input type="checkbox" :checked="isDark" @change="toggleTheme">
+          <span class="switch-track">
+            <span class="track-bg">
+              <span class="track-icon sun-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+              </span>
+              <span class="track-text light-label">浅色</span>
+              <span class="track-icon moon-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              </span>
+              <span class="track-text dark-label">深色</span>
+            </span>
+            <span class="switch-knob">
+              <svg v-if="isDark" class="knob-icon moon-knob" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+              <svg v-else class="knob-icon sun-knob" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="5"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+              <span class="knob-text">{{ isDark ? '深色' : '浅色' }}</span>
+            </span>
+          </span>
+        </label>
         <div class="version">v1.0.0</div>
       </div>
     </nav>
@@ -81,8 +111,10 @@
 
 <script setup>
 import { useRoute } from 'vue-router'
+import { useTheme } from './composables/useTheme'
 
 const route = useRoute()
+const { isDark, toggleTheme } = useTheme()
 
 function isActive(path) {
   if (path === '/') {
@@ -173,10 +205,153 @@ function isActive(path) {
   border-top: 1px solid var(--border-color);
 }
 
+.theme-switch {
+  display: block;
+  cursor: pointer;
+}
+
+.theme-switch input {
+  display: none;
+}
+
+.switch-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 140px;
+  height: 40px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+.track-bg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 16px;
+  z-index: 1;
+}
+
+.track-icon {
+  width: 18px;
+  height: 18px;
+  opacity: 0.35;
+  transition: opacity 0.3s ease;
+}
+
+.track-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.track-text {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.35;
+  transition: opacity 0.3s ease;
+  color: var(--text-secondary);
+}
+
+/* Switch knob */
+.switch-knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+  height: 30px;
+  background: var(--accent-primary);
+  border-radius: 16px;
+  z-index: 2;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.knob-icon {
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+  color: white;
+}
+
+.knob-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.knob-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  margin-right: 8px;
+}
+
+/* Light mode (unchecked) - knob on right */
+.theme-switch input:not(:checked) + .switch-track {
+  background: var(--bg-secondary);
+  border-color: #e0e0e0;
+}
+
+.theme-switch input:not(:checked) + .switch-track .track-bg {
+  color: var(--text-tertiary);
+}
+
+.theme-switch input:not(:checked) + .switch-track .light-label {
+  opacity: 0.6;
+}
+
+.theme-switch input:not(:checked) + .switch-track .moon-icon {
+  opacity: 0.5;
+}
+
+.theme-switch input:not(:checked) + .switch-track .switch-knob {
+  left: calc(100% - 68px);
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.theme-switch input:not(:checked) + .switch-track .knob-icon {
+  color: #333;
+}
+
+.theme-switch input:not(:checked) + .switch-track .knob-text {
+  color: #333;
+}
+
+/* Dark mode (checked) - knob on left */
+.theme-switch input:checked + .switch-track {
+  background: var(--bg-secondary);
+  border-color: var(--accent-primary);
+}
+
+.theme-switch input:checked + .switch-track .dark-label {
+  opacity: 0.6;
+}
+
+.theme-switch input:checked + .switch-track .sun-icon {
+  opacity: 0.5;
+}
+
+.theme-switch input:checked + .switch-track .switch-knob {
+  left: 4px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+}
+
+.theme-switch input:checked + .switch-track .knob-icon,
+.theme-switch input:checked + .switch-track .knob-text {
+  color: white;
+}
+
 .version {
   font-size: 12px;
   color: var(--text-tertiary);
   font-family: 'JetBrains Mono', monospace;
+  margin-top: 12px;
 }
 
 .main-content {

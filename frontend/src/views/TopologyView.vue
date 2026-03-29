@@ -160,13 +160,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { topoApi, functionApi } from '../api'
 import { Network, DataSet } from 'vis-network/standalone'
 import 'vis-network/styles/vis-network.css'
+import { useTheme } from '../composables/useTheme'
 
 const route = useRoute()
+const { isDark } = useTheme()
+
+const nodeFontColor = computed(() => isDark.value ? '#e6edf3' : '#1a1f2e')
 const graphContainer = ref(null)
 let network = null
 
@@ -275,7 +279,7 @@ function initGraph() {
       border: getNodeColor(n),
       highlight: { background: getNodeColor(n) + '50', border: getNodeColor(n) }
     },
-    font: { color: '#e6edf3', size: 14 },
+    font: { color: nodeFontColor.value, size: 14 },
     shape: n.product ? 'box' : 'ellipse',
     size: n.product ? 30 : 20,
     data: n.data || {},
@@ -334,6 +338,19 @@ watch(() => route.params.id, (newId) => {
     loadTopology()
   }
 }, { immediate: true })
+
+watch(isDark, () => {
+  if (network && nodes.value.length) {
+    nextTick(() => {
+      const fontColor = isDark.value ? '#e6edf3' : '#1a1f2e'
+      const updatedNodes = []
+      network.body.data.nodes.forEach(node => {
+        updatedNodes.push({ id: node.id, font: { color: fontColor, size: 14 } })
+      })
+      network.body.data.nodes.update(updatedNodes)
+    })
+  }
+})
 
 onMounted(async () => {
   await loadTopoList()

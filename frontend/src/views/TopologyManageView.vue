@@ -549,10 +549,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { topoApi, productApi } from '../api'
 import { Network, DataSet } from 'vis-network/standalone'
 import 'vis-network/styles/vis-network.css'
+import { useTheme } from '../composables/useTheme'
+
+const { isDark } = useTheme()
+
+const nodeFontColor = computed(() => isDark.value ? '#e6edf3' : '#1a1f2e')
 
 const searchQuery = ref('')
 const topologies = ref([])
@@ -834,7 +839,7 @@ async function initGraphicGraph() {
       border: n.color,
       highlight: { background: n.color + '50', border: n.color }
     },
-    font: { color: '#e6edf3', size: 14 },
+    font: { color: nodeFontColor.value, size: 14 },
     shape: 'box',
     size: 30
   })))
@@ -945,7 +950,7 @@ function addGraphicNode(position) {
       border: newNode.color,
       highlight: { background: newNode.color + '50', border: newNode.color }
     },
-    font: { color: '#e6edf3', size: 14 },
+    font: { color: nodeFontColor.value, size: 14 },
     shape: 'box',
     size: 30
   })
@@ -1105,6 +1110,19 @@ async function confirmDelete() {
 }
 
 onMounted(loadData)
+
+watch(isDark, () => {
+  if (graphicNetwork && graphicNodes.value.length) {
+    nextTick(() => {
+      const fontColor = isDark.value ? '#e6edf3' : '#1a1f2e'
+      const updatedNodes = []
+      graphicNetwork.body.data.nodes.forEach(node => {
+        updatedNodes.push({ id: node.id, font: { color: fontColor, size: 14 } })
+      })
+      graphicNetwork.body.data.nodes.update(updatedNodes)
+    })
+  }
+})
 
 onUnmounted(() => {
   if (graphicNetwork) {
