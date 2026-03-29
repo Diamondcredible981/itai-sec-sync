@@ -59,7 +59,7 @@
           </div>
           <div class="metric">
             <div class="metric-change" :class="getDeltaClass(-result.explanation.improvement.redundancy_rate_delta)">
-              {{ formatDelta(-result.explanation.improvement.redundancy_rate_delta) }}
+              {{ formatDelta(result.explanation.improvement.redundancy_rate_delta) }}
             </div>
             <div class="metric-label">冗余率</div>
             <div class="metric-values">
@@ -69,7 +69,7 @@
             </div>
           </div>
           <div class="metric">
-            <div class="metric-change" :class="getDeltaClass(-result.explanation.improvement.risk_score_reduction)">
+            <div class="metric-change" :class="getDeltaClass(result.explanation.improvement.risk_score_reduction)">
               {{ formatDelta(-result.explanation.improvement.risk_score_reduction) }}
             </div>
             <div class="metric-label">风险评分</div>

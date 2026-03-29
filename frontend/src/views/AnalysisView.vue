@@ -454,7 +454,7 @@ onMounted(loadTopoList)
 .score-circle.risk-low { border-color: var(--success); }
 
 .score-value {
-  font-size: 42px;
+  font-size: 36px;
   font-weight: 700;
   font-family: var(--font-mono);
   color: var(--text-primary);
