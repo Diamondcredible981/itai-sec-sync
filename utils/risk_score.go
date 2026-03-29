@@ -6,25 +6,23 @@ import (
 	"time"
 )
 
-const RiskModelVersion = "v1.2.0"
+const RiskModelVersion = "v1.3.0"
 
 type RiskWeights struct {
 	CoverageGap  float64 `json:"coverage_gap"`
-	Redundancy   float64 `json:"redundancy"`
-	SinglePoint  float64 `json:"single_point"`
+	SinglePoint float64 `json:"single_point"`
 }
 
 type RiskScore struct {
-	ModelVersion     string      `json:"model_version"`
-	CalculatedAt     string      `json:"calculated_at"`
-	Score            float64     `json:"score"`
-	Level            string      `json:"level"`
-	CoverageGapRate  float64     `json:"coverage_gap_rate"`
-	RedundancyRate   float64     `json:"redundancy_rate"`
-	SinglePointRate  float64     `json:"single_point_rate"`
-	TopContributors  []RiskContribution `json:"top_contributors"`
-	Advice           []string    `json:"advice"`
-	Weights          RiskWeights `json:"weights"`
+	ModelVersion    string             `json:"model_version"`
+	CalculatedAt    string            `json:"calculated_at"`
+	Score           float64           `json:"score"`
+	Level           string            `json:"level"`
+	CoverageGapRate float64          `json:"coverage_gap_rate"`
+	SinglePointRate float64          `json:"single_point_rate"`
+	TopContributors []RiskContribution `json:"top_contributors"`
+	Advice          []string          `json:"advice"`
+	Weights         RiskWeights       `json:"weights"`
 }
 
 type RiskContribution struct {
@@ -37,9 +35,8 @@ type RiskContribution struct {
 
 func DefaultRiskWeights() RiskWeights {
 	return RiskWeights{
-		CoverageGap: 0.5,
-		Redundancy:  0.3,
-		SinglePoint: 0.2,
+		CoverageGap:  0.6,
+		SinglePoint: 0.4,
 	}
 }
 
@@ -54,7 +51,6 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 			Score:           100,
 			Level:           level,
 			CoverageGapRate: 100,
-			RedundancyRate:  0,
 			SinglePointRate: 0,
 			TopContributors: []RiskContribution{},
 			Advice:          buildRiskAdvice(level, []RiskContribution{}),
@@ -63,15 +59,11 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 	}
 
 	missing := 0
-	redundant := 0
 	singlePoint := 0
 
 	for _, count := range functionMap {
 		if count == 0 {
 			missing++
-		}
-		if count > 1 {
-			redundant++
 		}
 		if count == 1 {
 			singlePoint++
@@ -79,11 +71,9 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 	}
 
 	coverageGapRate := float64(missing) / float64(totalFunctions) * 100
-	redundancyRate := float64(redundant) / float64(totalFunctions) * 100
 	singlePointRate := float64(singlePoint) / float64(totalFunctions) * 100
 
 	score := coverageGapRate*weights.CoverageGap +
-		redundancyRate*weights.Redundancy +
 		singlePointRate*weights.SinglePoint
 
 	score = clamp(score, 0, 100)
@@ -95,13 +85,6 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 			Weight:    round2(weights.CoverageGap),
 			Impact:    round2(coverageGapRate * weights.CoverageGap),
 			Reason:    "未覆盖功能越多，暴露面越大",
-		},
-		{
-			Dimension: "redundancy",
-			Rate:      round2(redundancyRate),
-			Weight:    round2(weights.Redundancy),
-			Impact:    round2(redundancyRate * weights.Redundancy),
-			Reason:    "冗余功能越多，配置复杂度越高",
 		},
 		{
 			Dimension: "single_point",
@@ -124,7 +107,6 @@ func CalculateRiskScore(totalFunctions int, functionMap map[uint]int, weights Ri
 		Score:           round2(score),
 		Level:           level,
 		CoverageGapRate: round2(coverageGapRate),
-		RedundancyRate:  round2(redundancyRate),
 		SinglePointRate: round2(singlePointRate),
 		TopContributors: contributions,
 		Advice:          buildRiskAdvice(level, contributions),
@@ -143,8 +125,6 @@ func buildRiskAdvice(level string, contributions []RiskContribution) []string {
 	switch contributions[0].Dimension {
 	case "coverage_gap":
 		advice = append(advice, "优先补齐缺失功能，确保关键检测与防护能力全覆盖")
-	case "redundancy":
-		advice = append(advice, "优先收敛重复能力，保留必要异构冗余并减少策略复杂度")
 	case "single_point":
 		advice = append(advice, "优先引入双活或异构备份，降低单点承载导致的中断风险")
 	default:
